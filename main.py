@@ -7,35 +7,39 @@ load_dotenv()
 
 
 def get_channel(client, id=None, handle=None):
-    assert id is not None or handle is not None
+    if (id is None) == (handle is None):
+        raise ValueError("Provide exactly one of id or handle")
 
     request = client.channels().list(
-        part="snippet,contentDetails,statistics",
+        part="contentDetails",
         id=id,
-        forHandle=(handle if id is None else None),
+        forHandle=handle,
     )
     response = request.execute()
 
-    num_matches = response.get("pageInfo").get("totalResults")
-    assert num_matches == 1
+    items = response.get("items", [])
+    if len(items) != 1:
+        raise LookupError(f"Expected one channel, found {len(items)}")
 
-    return response.get("items")[0]
+    return items[0]
 
 
-def get_playlist_items(client, id, page_token=None, num_results=25):
+def get_playlist_items(client, id, page_token=None, max_results=25):
     videos = []
 
-    while len(videos) < num_results:
+    while len(videos) < max_results:
         request = client.playlistItems().list(
-            part="snippet,contentDetails",
-            maxResults=min(25, num_results - len(videos)),
+            part="contentDetails",
+            maxResults=min(25, max_results - len(videos)),
             playlistId=id,
             pageToken=page_token,
         )
         response = request.execute()
+        videos += response.get("items", [])
 
         page_token = response.get("nextPageToken")
-        videos += response.get("items")
+        if not page_token:
+            break
     return videos
 
 
@@ -57,16 +61,19 @@ def get_videos_stats(client, video_ids):
                     "title": item["snippet"]["title"],
                     "publishedAt": item["snippet"]["publishedAt"],
                     "duration": item["contentDetails"]["duration"],
-                    "viewCount": item["statistics"].get("viewCount", 0),
-                    "likeCount": item["statistics"].get("likeCount", 0),
-                    "commentCount": item["statistics"].get("commentCount", 0),
+                    "viewCount": item["statistics"].get("viewCount", "0"),
+                    "likeCount": item["statistics"].get("likeCount", "0"),
+                    "commentCount": item["statistics"].get("commentCount", "0"),
                 }
             )
     return all_stats
 
 
 def main():
-    client = build("youtube", "v3", developerKey=os.getenv("key"))
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
+        raise RuntimeError("YOUTUBE_API_KEY is not configured")
+    client = build("youtube", "v3", developerKey=api_key)
 
     channel = get_channel(client, handle="@TED")
     assert channel is not None
@@ -75,9 +82,7 @@ def main():
         channel.get("contentDetails").get("relatedPlaylists").get("uploads")
     )
 
-    videos = get_playlist_items(client, uploads_playlist_id)
-
-    videos = get_playlist_items(client, uploads_playlist_id, num_results=1)
+    videos = get_playlist_items(client, uploads_playlist_id, max_results=1)
 
     video_ids = [video.get("contentDetails").get("videoId") for video in videos]
     stats = get_videos_stats(client, video_ids)
