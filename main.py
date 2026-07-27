@@ -3,15 +3,17 @@ import os
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
 
+import app.channels.repository as channels
+
 load_dotenv()
 
 
-def get_channel(client, id=None, handle=None):
+def get_channel_info(client, id=None, handle=None):
     if (id is None) == (handle is None):
         raise ValueError("Provide exactly one of id or handle")
 
     request = client.channels().list(
-        part="contentDetails",
+        part="snippet,statistics,contentDetails",
         id=id,
         forHandle=handle,
     )
@@ -21,7 +23,16 @@ def get_channel(client, id=None, handle=None):
     if len(items) != 1:
         raise LookupError(f"Expected one channel, found {len(items)}")
 
-    return items[0]
+    item = items[0]
+    channel = {
+        "channel_id": item["id"],
+        "title": item["snippet"]["title"],
+        "published_at": item["snippet"]["publishedAt"],
+        "url": item["snippet"]["customUrl"],
+        "video_count": item["statistics"].get("videoCount", "0"),
+        "uploads_playlist_id": item["contentDetails"]["relatedPlaylists"]["uploads"],
+    }
+    return channel
 
 
 def get_playlist_items(client, id, page_token=None, max_results=25):
@@ -75,19 +86,25 @@ def main():
         raise RuntimeError("YOUTUBE_API_KEY is not configured")
     client = build("youtube", "v3", developerKey=api_key)
 
-    channel = get_channel(client, handle="@TED")
-    assert channel is not None
-
-    uploads_playlist_id = (
-        channel.get("contentDetails").get("relatedPlaylists").get("uploads")
+    channel = get_channel_info(client, handle="@TED")
+    channels.create_channel(
+        channel["channel_id"],
+        channel["title"],
+        channel["published_at"],
+        channel["url"],
+        channel["video_count"],
+        channel["uploads_playlist_id"],
     )
 
-    videos = get_playlist_items(client, uploads_playlist_id, max_results=1)
+    fetched_channel = channels.get_channel(channel["channel_id"])
+    print(fetched_channel)
 
-    video_ids = [video.get("contentDetails").get("videoId") for video in videos]
-    stats = get_videos_stats(client, video_ids)
-    print(stats)
-    print(len(stats))
+    # videos = get_playlist_items(client, channel["uploads_playlist_id"], max_results=1)
+
+    # video_ids = [video.get("contentDetails").get("videoId") for video in videos]
+    # stats = get_videos_stats(client, video_ids)
+    # print(stats)
+    # print(len(stats))
 
 
 if __name__ == "__main__":

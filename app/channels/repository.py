@@ -14,6 +14,10 @@ def create_channel(
             uploads_playlist_id
         )
         VALUES (%s, %s, %s, %s, %s, %s)
+
+        ON CONFLICT (channel_id)
+        DO UPDATE SET
+            video_count = %s
     """
 
     with get_connection() as connection:
@@ -27,6 +31,7 @@ def create_channel(
                     url,
                     video_count,
                     uploads_playlist_id,
+                    video_count,
                 ),
             )
 
@@ -34,14 +39,14 @@ def create_channel(
 def get_channel(channel_id):
 
     query = """
-        SELECT (
+        SELECT 
             channel_id, 
             title, 
             published_at, 
             url, 
             video_count, 
-            uploads_playlist_id
-        ) 
+            uploads_playlist_id,
+            tracked_at
         FROM channels 
         WHERE channel_id = %s
     """
@@ -50,7 +55,7 @@ def get_channel(channel_id):
         with connection.cursor() as cursor:
             cursor.execute(
                 query,
-                (channel_id),
+                (channel_id,),
             )
 
             channel = cursor.fetchone()

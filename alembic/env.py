@@ -9,7 +9,7 @@ load_dotenv()
 
 config = context.config
 
-database_url = os.environ["DATABASE_URL"]
+database_url = os.environ["SQLALCHEMY_URL"]
 config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:
