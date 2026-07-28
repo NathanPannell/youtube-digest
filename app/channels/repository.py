@@ -1,9 +1,18 @@
 from app.database import get_connection
 
 
-def create_channel(
-    channel_id, title, published_at, url, video_count, uploads_playlist_id
-):
+def channel_dict_to_tuple(channel):
+    return (
+        channel["channel_id"],
+        channel["title"],
+        channel["published_at"],
+        channel["url"],
+        channel["video_count"],
+        channel["uploads_playlist_id"],
+    )
+
+
+def create_channel(channel):
     query = """
         INSERT INTO channels (
             channel_id, 
@@ -17,22 +26,14 @@ def create_channel(
 
         ON CONFLICT (channel_id)
         DO UPDATE SET
-            video_count = %s
+            video_count = EXCLUDED.video_count
     """
 
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 query,
-                (
-                    channel_id,
-                    title,
-                    published_at,
-                    url,
-                    video_count,
-                    uploads_playlist_id,
-                    video_count,
-                ),
+                channel_dict_to_tuple(channel),
             )
 
 
