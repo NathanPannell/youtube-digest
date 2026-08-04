@@ -70,7 +70,10 @@ def get_playlist_items(client, id, page_token=None, max_results=25, max_age_days
             ]
         )
 
-        if all_playlist_items[-1].get("published_at") < oldest_published_at:
+        if (
+            len(all_playlist_items) > 1
+            and all_playlist_items[-1].get("published_at") < oldest_published_at
+        ):
             all_playlist_items = [
                 pi
                 for pi in all_playlist_items
@@ -99,6 +102,7 @@ def get_videos_stats(client, video_ids):
         for item in response.get("items", []):
             all_stats.append(
                 {
+                    "video_id": item["id"],
                     "duration": item["contentDetails"]["duration"],
                     "view_count": item["statistics"].get("viewCount", "0"),
                     "like_count": item["statistics"].get("likeCount", "0"),
@@ -131,8 +135,13 @@ def main():
     video_ids = [playlist_item.get("video_id") for playlist_item in playlist_items]
     video_stats = get_videos_stats(client, video_ids)
 
-    # Python magic
-    videos_list = [info | stats for info, stats in zip(playlist_items, video_stats)]
+    merged = {}
+    for item in playlist_items:
+        merged[item["video_id"]] = item
+    for video in video_stats:
+        merged[video["video_id"]] = merged.get(video["video_id"], {}) | video
+
+    videos_list = merged.values()
     videos.create_videos(videos_list)
 
 
