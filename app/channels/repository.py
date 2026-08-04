@@ -65,3 +65,30 @@ def get_channel(channel_id):
             raise LookupError(f"Unable to find channel with channel_id = {channel_id}")
 
         return channel
+
+
+def get_all_channels():
+    query = """
+            SELECT 
+                channel_id, 
+                title, 
+                published_at, 
+                url, 
+                video_count, 
+                uploads_playlist_id,
+                tracked_at
+            FROM channels
+        """
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                query,
+            )
+
+            channels = cursor.fetchall()
+
+        if channels is None:
+            raise LookupError(f"Unable to find any channels")
+
+        return channels
