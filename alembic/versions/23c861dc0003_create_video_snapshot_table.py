@@ -26,6 +26,7 @@ def upgrade() -> None:
             view_count INTEGER,
             like_count INTEGER,
             comment_count INTEGER,
+            age_in_seconds INTEGER,
             PRIMARY KEY (video_id, snapshot_time)
         ) 
     """)
