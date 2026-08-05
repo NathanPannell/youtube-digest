@@ -88,7 +88,7 @@ def get_all_channels():
 
             channels = cursor.fetchall()
 
-        if channels is None:
+        if channels is []:
             raise LookupError(f"Unable to find any channels")
 
         return channels

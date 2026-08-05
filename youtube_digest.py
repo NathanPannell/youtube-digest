@@ -173,8 +173,11 @@ def update_all_tracked_channels(client, max_age_days):
     all_channels = channels_repository.get_all_channels()
 
     for channel in all_channels:
-        # Call this to update the video count in the 'channels' table
-        start_tracking_channel(client, channel["url"][1:], max_age_days)
+        channel = fetch_channel(client, id=channel["channel_id"])
+        print(f"Found channel '{channel["title"]}'")
+        channels_repository.create_channel(channel)  # Update videos count
+
+        update_tracked_channel(client, channel["uploads_playlist_id"], max_age_days)
 
 
 def main():
