@@ -30,8 +30,7 @@ def create_videos(videos):
 
         ON CONFLICT (video_id)
         DO UPDATE SET
-            title = EXCLUDED.title,  
-            duration = EXCLUDED.duration,
+            title = EXCLUDED.title,
             view_count = EXCLUDED.view_count,
             like_count = EXCLUDED.like_count,
             comment_count = EXCLUDED.comment_count

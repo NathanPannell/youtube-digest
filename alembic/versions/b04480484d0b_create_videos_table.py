@@ -21,11 +21,11 @@ def upgrade() -> None:
     """Upgrade schema."""
     op.execute("""
         CREATE TABLE videos (
-            video_id VARCHAR(24) PRIMARY KEY,
+            video_id VARCHAR(11) PRIMARY KEY,
             channel_id VARCHAR(24) REFERENCES channels(channel_id),
             published_at TIMESTAMPTZ NOT NULL,
             title VARCHAR(128) NOT NULL,
-            duration VARCHAR(16) NOT NULL,
+            duration VARCHAR(11) NOT NULL,
             view_count INTEGER,
             like_count INTEGER,
             comment_count INTEGER
