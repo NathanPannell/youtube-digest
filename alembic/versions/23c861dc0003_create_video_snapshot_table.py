@@ -23,9 +23,9 @@ def upgrade() -> None:
             video_id VARCHAR(11) NOT NULL REFERENCES videos(video_id),
             snapshot_time TIMESTAMPTZ NOT NULL,
             published_at TIMESTAMPTZ NOT NULL,
-            view_count INTEGER,
-            like_count INTEGER,
-            comment_count INTEGER,
+            view_count BIGINT,
+            like_count BIGINT,
+            comment_count BIGINT,
             age_in_seconds INTEGER,
             PRIMARY KEY (video_id, snapshot_time)
         ) 

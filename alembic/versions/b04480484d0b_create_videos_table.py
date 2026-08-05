@@ -26,9 +26,9 @@ def upgrade() -> None:
             published_at TIMESTAMPTZ NOT NULL,
             title VARCHAR(128) NOT NULL,
             duration VARCHAR(11) NOT NULL,
-            view_count INTEGER,
-            like_count INTEGER,
-            comment_count INTEGER
+            view_count BIGINT,
+            like_count BIGINT,
+            comment_count BIGINT
         )
         """)
 
