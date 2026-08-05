@@ -63,7 +63,7 @@ def upgrade() -> None:
 
     op.execute("""
         CREATE TRIGGER trg_snapshot_video_stats
-        AFTER UPDATE ON videos
+        AFTER INSERT OR UPDATE ON videos
         FOR EACH ROW
         EXECUTE FUNCTION snapshot_video_stats()
     """)
