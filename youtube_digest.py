@@ -174,7 +174,7 @@ def update_all_tracked_channels(client, max_age_days):
 
     for channel in all_channels:
         # Call this to update the video count in the 'channels' table
-        start_tracking_channel(client, channel["handle"], max_age_days)
+        start_tracking_channel(client, channel["url"][1:], max_age_days)
 
 
 def main():
