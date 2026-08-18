@@ -1,20 +1,22 @@
 import os
+import googleapiclient.discovery
+
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import googleapiclient.discovery
-from dotenv import load_dotenv
+import app.repositories.channels as channel_repo
+import app.repositories.videos as video_repo
+
+# HELPER METHODS
 
 
-import app.channels.repository as channels_repository
-import app.videos.repository as videos_repository
-import argparse
+def create_youtube_client():
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
+        raise RuntimeError("YOUTUBE_API_KEY is not configured")
 
-load_dotenv()
-
-
-MAX_AGE_IN_DAYS = 7
-MAX_VIDEO_RESULTS = 10_000
+    client = googleapiclient.discovery.build("youtube", "v3", developerKey=api_key)
+    return client
 
 
 def fetch_channel(client, id=None, handle=None):
@@ -48,8 +50,8 @@ def fetch_playlist_items(
     client,
     id,
     page_token=None,
-    max_results=MAX_VIDEO_RESULTS,
-    max_age_days=MAX_AGE_IN_DAYS,
+    max_results=10_000,
+    max_age_days=7,
 ):
     all_playlist_items = []
     oldest_date_threshold = datetime.now(ZoneInfo("America/Vancouver")) - timedelta(
@@ -124,36 +126,33 @@ def fetch_videos_stats(client, video_ids):
     return all_videos_stats
 
 
-def create_youtube_client():
-    api_key = os.environ.get("YOUTUBE_API_KEY")
-    if not api_key:
-        raise RuntimeError("YOUTUBE_API_KEY is not configured")
-
-    client = googleapiclient.discovery.build("youtube", "v3", developerKey=api_key)
-    return client
+# INGESTION METHODS
 
 
-def parse_cli_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-n", "--handle")
-    parser.add_argument("-d", "--days", default=7, type=int)
-    args = parser.parse_args()
-    return args
+def upsert_channel(handle=None, client=None, channel_id=None):
+    if client is None:
+        client = create_youtube_client()
 
-
-def start_tracking_channel(client, handle, max_age_days):
-    channel = fetch_channel(client, handle=handle)
+    channel = fetch_channel(client, handle=handle, id=channel_id)
     print(f"Found channel '{channel["title"]}'")
-    channels_repository.create_channel(channel)
+    channel_repo.create_channel(channel)
 
-    update_tracked_channel(client, channel["uploads_playlist_id"], max_age_days)
+    return channel
 
 
-def update_tracked_channel(client, uploads_playlist_id, max_age_days):
+def snapshot_channel_videos(channel_id, client=None, max_video_age_days=None):
+    if client is None:
+        client = create_youtube_client()
+
+    if max_video_age_days is None:
+        max_video_age_days = os.environ.get("MAX_VIDEO_AGE_DAYS")
+
+    channel = upsert_channel(client=client, channel_id=channel_id)
+
     playlist_items = fetch_playlist_items(
-        client, uploads_playlist_id, max_age_days=max_age_days
+        client, channel.get("uploads_playlist_id"), max_age_days=max_video_age_days
     )
-    print(f"Found {len(playlist_items)} videos in the past {max_age_days} days")
+    print(f"Found {len(playlist_items)} videos in the past {max_video_age_days} days")
 
     video_ids = [playlist_item.get("video_id") for playlist_item in playlist_items]
     video_stats = fetch_videos_stats(client, video_ids)
@@ -166,29 +165,15 @@ def update_tracked_channel(client, uploads_playlist_id, max_age_days):
         merged[video["video_id"]] = merged.get(video["video_id"], {}) | video
     videos_list = merged.values()
 
-    videos_repository.create_videos(videos_list)
+    video_repo.create_videos(videos_list)
 
 
-def update_all_tracked_channels(client, max_age_days):
-    all_channels = channels_repository.get_all_channels()
-
-    for channel in all_channels:
-        channel = fetch_channel(client, id=channel["channel_id"])
-        print(f"Found channel '{channel["title"]}'")
-        channels_repository.create_channel(channel)  # Update videos count
-
-        update_tracked_channel(client, channel["uploads_playlist_id"], max_age_days)
-
-
-def main():
+def snapshot_all(max_video_age_days=None):
     client = create_youtube_client()
-    args = parse_cli_args()
 
-    if args.handle:
-        start_tracking_channel(client, args.handle, args.days)
-    else:
-        update_all_tracked_channels(client, args.days)
-
-
-if __name__ == "__main__":
-    main()
+    all_channels = channel_repo.get_all_channels()
+    for channel in all_channels:
+        channel_id = channel.get("channel_id")
+        snapshot_channel_videos(
+            channel_id=channel_id, max_video_age_days=max_video_age_days, client=client
+        )
