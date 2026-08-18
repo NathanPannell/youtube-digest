@@ -1,19 +1,25 @@
 import os
+import googleapiclient.discovery
+
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from googleapiclient.discovery import build
-from dotenv import load_dotenv
+import app.repositories.channels as channel_repo
+import app.repositories.videos as video_repo
+
+# HELPER METHODS
 
 
-import app.channels.repository as channels
-import app.videos.repository as videos
-import argparse
+def create_youtube_client():
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
+        raise RuntimeError("YOUTUBE_API_KEY is not configured")
 
-load_dotenv()
+    client = googleapiclient.discovery.build("youtube", "v3", developerKey=api_key)
+    return client
 
 
-def get_channel_info(client, id=None, handle=None):
+def fetch_channel(client, id=None, handle=None):
     if (id is None) == (handle is None):
         raise ValueError("Provide exactly one of id or handle")
 
@@ -40,9 +46,15 @@ def get_channel_info(client, id=None, handle=None):
     return channel
 
 
-def get_playlist_items(client, id, page_token=None, max_results=25, max_age_days=7):
+def fetch_playlist_items(
+    client,
+    id,
+    page_token=None,
+    max_results=10_000,
+    max_age_days=7,
+):
     all_playlist_items = []
-    oldest_published_at = datetime.now(ZoneInfo("America/Vancouver")) - timedelta(
+    oldest_date_threshold = datetime.now(ZoneInfo("America/Vancouver")) - timedelta(
         days=max_age_days
     )
 
@@ -70,15 +82,17 @@ def get_playlist_items(client, id, page_token=None, max_results=25, max_age_days
             ]
         )
 
+        # If there is a video that's too old, we've gotten everything within range
+        # Run a quick filter to trim the ones we don't want
         if (
             len(all_playlist_items) > 1
-            and all_playlist_items[-1].get("published_at") < oldest_published_at
+            and all_playlist_items[-1].get("published_at") < oldest_date_threshold
         ):
             all_playlist_items = [
                 pi
                 for pi in all_playlist_items
                 if pi.get("published_at")
-                and pi.get("published_at") > oldest_published_at
+                and pi.get("published_at") > oldest_date_threshold
             ]
             break
 
@@ -89,8 +103,8 @@ def get_playlist_items(client, id, page_token=None, max_results=25, max_age_days
     return all_playlist_items
 
 
-def get_videos_stats(client, video_ids):
-    all_stats = []
+def fetch_videos_stats(client, video_ids):
+    all_videos_stats = []
 
     for i in range(0, len(video_ids), 50):
         batch_ids = video_ids[i : i + 50]
@@ -100,7 +114,7 @@ def get_videos_stats(client, video_ids):
         response = request.execute()
 
         for item in response.get("items", []):
-            all_stats.append(
+            all_videos_stats.append(
                 {
                     "video_id": item["id"],
                     "duration": item["contentDetails"]["duration"],
@@ -109,41 +123,57 @@ def get_videos_stats(client, video_ids):
                     "comment_count": item["statistics"].get("commentCount", "0"),
                 }
             )
-    return all_stats
+    return all_videos_stats
 
 
-def main():
-    api_key = os.environ.get("YOUTUBE_API_KEY")
-    if not api_key:
-        raise RuntimeError("YOUTUBE_API_KEY is not configured")
-    client = build("youtube", "v3", developerKey=api_key)
+# INGESTION METHODS
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-n", "--handle")
-    parser.add_argument("-d", "--days", default=7, type=int)
-    args = parser.parse_args()
 
-    channel = get_channel_info(client, handle=args.handle)
-    print(f"Found channel {channel["title"]}")
-    channels.create_channel(channel)
+def upsert_channel(handle=None, client=None, channel_id=None):
+    if client is None:
+        client = create_youtube_client()
 
-    playlist_items = get_playlist_items(
-        client, channel["uploads_playlist_id"], max_age_days=args.days, max_results=1000
+    channel = fetch_channel(client, handle=handle, id=channel_id)
+    print(f"Found channel '{channel["title"]}'")
+    channel_repo.create_channel(channel)
+
+    return channel
+
+
+def snapshot_channel_videos(channel_id, client=None, max_video_age_days=None):
+    if client is None:
+        client = create_youtube_client()
+
+    if max_video_age_days is None:
+        max_video_age_days = os.environ.get("MAX_VIDEO_AGE_DAYS")
+
+    channel = upsert_channel(client=client, channel_id=channel_id)
+
+    playlist_items = fetch_playlist_items(
+        client, channel.get("uploads_playlist_id"), max_age_days=max_video_age_days
     )
-    print(f"Found {len(playlist_items)} videos in the past {args.days} days")
+    print(f"Found {len(playlist_items)} videos in the past {max_video_age_days} days")
 
     video_ids = [playlist_item.get("video_id") for playlist_item in playlist_items]
-    video_stats = get_videos_stats(client, video_ids)
+    video_stats = fetch_videos_stats(client, video_ids)
 
+    # Merge dictionaries element-wise
     merged = {}
     for item in playlist_items:
         merged[item["video_id"]] = item
     for video in video_stats:
         merged[video["video_id"]] = merged.get(video["video_id"], {}) | video
-
     videos_list = merged.values()
-    videos.create_videos(videos_list)
+
+    video_repo.create_videos(videos_list)
 
 
-if __name__ == "__main__":
-    main()
+def snapshot_all(max_video_age_days=None):
+    client = create_youtube_client()
+
+    all_channels = channel_repo.get_all_channels()
+    for channel in all_channels:
+        channel_id = channel.get("channel_id")
+        snapshot_channel_videos(
+            channel_id=channel_id, max_video_age_days=max_video_age_days, client=client
+        )

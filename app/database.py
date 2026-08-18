@@ -1,4 +1,3 @@
-# app/database.py
 import os
 from contextlib import contextmanager
 
